@@ -41,7 +41,7 @@ for iter = 1:max_iter
     z_temp = z - step_size * gradient;
 
     % Proximal step: apply TV regularizer
-    z = tv_reg.proxiaml(z, z_temp);
+    z = tv_reg.proximal(z, z_temp);
 
     % Check convergence
     rel_change = norm(z(:) - z_old(:)) / norm(z_old(:));

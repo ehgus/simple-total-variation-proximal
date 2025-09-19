@@ -15,7 +15,7 @@ classdef LpTotalVariation < OptRegularizer
             obj.norm_weight=norm_weight;
             obj.norm=LpUnitBall(round(1/(1-1/p))); % projection of unit ball
         end
-        function y=proxiaml(obj, y, x)
+        function y=proximal(obj, y, x)
             w = obj.weight;
             v = obj.norm_weight;
             % y = x +  w(∇^T)z
