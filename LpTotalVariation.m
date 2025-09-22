@@ -29,19 +29,17 @@ classdef LpTotalVariation < OptRegularizer
             z_shape = horzcat(length(x_shape), x_shape);
             x_tmp = zeros(x_shape);
             z = zeros(z_shape);
-            z_next = zeros(z_shape);
-            diff = z_next;
+            z_tmp = zeros(z_shape);
             % step 2: iterative find z
             % where z = argmin(1/2|(∇^T)p|^2_2+(p^T)∇x + |-z|_p*)
             for idx=1:obj.niter
                 % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(w(∇^T)z+x)
                 x_tmp = x + w * spatial_diff_T(x_tmp, z);
-                diff = v*spatial_diff(diff, x_tmp);
+                z_tmp = v*spatial_diff(z_tmp, x_tmp);
                 % Apply diff value
-                z = z - diff;
+                z_tmp = z - z_tmp;
                 % Apply proximal
-                z_next = v*obj.norm.projection(z_next, z/v);
-                z(:) = z_next;
+                z = v*obj.norm.projection(z, z_tmp/v);
             end
             % step 3: calculate y
             % y = x +  w(∇^T)z
