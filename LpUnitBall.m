@@ -35,21 +35,21 @@ classdef LpUnitBall < OptProjection
             y = max(min(y, 1), -1);
         end
 
-        function y = proj_l1_ball(~, y, x)
+        function y = proj_l1_ball(~, ~, x)
             % L1 ball projection
             norm_x = mean(abs(x), ndims(x));
             proj_degree = max(norm_x - 1, 0);
-            y(:) = x - proj_degree .* sign(x) .* norm_x;
+            y = x - proj_degree .* sign(x) .* norm_x;
         end
 
-        function y = proj_l2_ball(~, y, x)
+        function y = proj_l2_ball(~, ~, x)
             norm_x = sqrt(sum(x.^2, 1));
             inv_scale = max(norm_x, 1);
-            y(:) = x ./ inv_scale;
+            y = x ./ inv_scale;
         end
 
-        function y = proj_linf_ball(~, y, x)
-            y(:) = max(min(x, 1), -1);
+        function y = proj_linf_ball(~, ~, x)
+            y = max(min(x, 1), -1);
         end
     end
 end
