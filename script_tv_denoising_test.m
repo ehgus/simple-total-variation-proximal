@@ -19,7 +19,7 @@ noisy_img = max(0, min(1, noisy_img));  % Clip to [0,1]
 
 % TV denoising parameters
 lambda = 1e-1;  % Regularization parameter
-p = 2;          % L1 or L2 total variation
+p = 1;          % L1 or L2 total variation
 niter = 100;    % Number of iterations
 norm_weight = 1; % Weight for the dual norm
 
@@ -27,7 +27,7 @@ norm_weight = 1; % Weight for the dual norm
 tv_reg = LpTotalVariation(lambda, p, niter, norm_weight);
 
 % Iterative denoising using proximal gradient method
-max_iter = 50;
+max_iter = 100;
 step_size = 1.0;
 z = noisy_img;  % Initialize with noisy image
 
