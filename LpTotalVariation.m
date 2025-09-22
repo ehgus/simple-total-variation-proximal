@@ -26,7 +26,7 @@ classdef LpTotalVariation < OptRegularizer
             % step 1: initialize empty z
             % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
             x_shape = size(x);
-            z_shape = horzcat(x_shape, length(x_shape));
+            z_shape = horzcat(length(x_shape), x_shape);
             x_tmp = zeros(x_shape);
             z = zeros(z_shape);
             z_next = zeros(z_shape);
