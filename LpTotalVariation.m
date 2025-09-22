@@ -21,7 +21,15 @@ classdef LpTotalVariation < OptRegularizer
             % y = x +  w(∇^T)z
             % where z = argmin[v|-z|_p* + v*(w/2|(∇^T)z|^2_2+(z^T)∇x)]
             % See Benchettou, Oumaima, Abdeslem Hafid Bentbib, and Abderrahman Bouhamidi. "An accelerated tensorial double proximal gradient method for total variation regularization problem." Journal of Optimization Theory and Applications 198.1 (2023): 111-134.
-            
+            % validation
+            assert(strcmp(class(y), class(y)), "Input arguments should be the same class")
+            if isgpuarray(x)
+                spatial_diff = @spatial_diff_cuda;
+                spatial_diff_T = @spatial_diff_T_cuda;
+            else
+                spatial_diff = @spatial_diff_cpu;
+                spatial_diff_T = @spatial_diff_T_cpu;
+            end
             % calculate z
             % step 1: initialize empty z
             % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
