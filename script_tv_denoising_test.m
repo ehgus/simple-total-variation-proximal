@@ -16,6 +16,7 @@ noise_level = 0.1;
 rng(42);  % For reproducible results
 noisy_img = img + noise_level * randn(size(img));
 noisy_img = max(0, min(1, noisy_img));  % Clip to [0,1]
+% noisy_img = gpuArray(noisy_img); % if you test it on noisy_img
 
 % TV denoising parameters
 lambda = 1e-1;   % Regularization parameter

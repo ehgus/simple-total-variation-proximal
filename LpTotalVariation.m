@@ -27,9 +27,9 @@ classdef LpTotalVariation < OptRegularizer
             % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
             x_shape = size(x);
             z_shape = horzcat(length(x_shape), x_shape);
-            x_tmp = zeros(x_shape);
-            z = zeros(z_shape);
-            z_tmp = zeros(z_shape);
+            x_tmp = zeros(x_shape, 'like', x);
+            z = zeros(z_shape, 'like', x);
+            z_tmp = zeros(z_shape, 'like', x);
             % step 2: iterative find z
             % where z = argmin(1/2|(∇^T)p|^2_2+(p^T)∇x + |-z|_p*)
             for idx=1:obj.niter
