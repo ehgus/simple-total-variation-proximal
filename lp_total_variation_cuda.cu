@@ -301,7 +301,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             spatial_diff_z_update_kernel<double><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
                 z_data, x_tmp_data, (double)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
         }
-
+        // Wait for completion
+        cudaDeviceSynchronize();
+        // Check for kernel errors
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            mexErrMsgTxt("CUDA kernel execution failed");
+        }
         // Clean up x_tmp
         cudaFree(x_tmp_data);
     } else { // mxSINGLE_CLASS
@@ -328,19 +334,16 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             spatial_diff_z_update_kernel<float><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
                 z_data, x_tmp_data, (float)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
         }
-
+        // Wait for completion
+        cudaDeviceSynchronize();
+        // Check for kernel errors
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            mexErrMsgTxt("CUDA kernel execution failed");
+        }
         // Clean up x_tmp
         cudaFree(x_tmp_data);
     }
-
-    // Check for kernel errors
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        mexErrMsgTxt("CUDA kernel execution failed");
-    }
-
-    // Wait for completion
-    cudaDeviceSynchronize();
 
     // Clean up device memory
     cudaFree(d_dims);
