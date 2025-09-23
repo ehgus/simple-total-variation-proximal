@@ -2,7 +2,8 @@
 #include "gpu/mxGPUArray.h"
 #include <cuda_runtime.h>
 
-__global__ void spatial_diff_kernel(double* out_data, const double* in_data,
+template<typename T>
+__global__ void spatial_diff_kernel(T* out_data, const T* in_data,
                                    int ndims, const int* dims, int total_elements) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -10,7 +11,7 @@ __global__ void spatial_diff_kernel(double* out_data, const double* in_data,
 
     // Calculate multi-dimensional indices from linear index
     int temp_idx = idx;
-    const double center_in_data = in_data[idx];
+    const T center_in_data = in_data[idx];
     int coords[8]; // Support up to 8 dimensions
 
     for (int d = 0; d < ndims; d++) {
@@ -61,9 +62,15 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     const mxGPUArray *in_gpu = mxGPUCreateFromMxArray(prhs[1]);
 
     // Validate data types
-    if (mxGPUGetClassID(out_gpu) != mxDOUBLE_CLASS ||
-        mxGPUGetClassID(in_gpu) != mxDOUBLE_CLASS) {
-        mexErrMsgTxt("Input arrays must be of type double");
+    mxClassID out_class = mxGPUGetClassID(out_gpu);
+    mxClassID in_class = mxGPUGetClassID(in_gpu);
+
+    if (out_class != in_class) {
+        mexErrMsgTxt("Input and output arrays must have the same data type");
+    }
+
+    if (in_class != mxDOUBLE_CLASS && in_class != mxSINGLE_CLASS) {
+        mexErrMsgTxt("Input arrays must be of type double or single");
     }
 
     // Get dimensions
@@ -105,18 +112,27 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     cudaMemcpy(d_dims, dims_host, ndims_in * sizeof(int), cudaMemcpyHostToDevice);
 
     // Create output array (copy of input)
-    mxGPUArray *out_result = mxGPUCreateGPUArray(ndims_out, out_dims, mxDOUBLE_CLASS, mxREAL, MX_GPU_DO_NOT_INITIALIZE);
+    mxGPUArray *out_result = mxGPUCreateGPUArray(ndims_out, out_dims, in_class, mxREAL, MX_GPU_DO_NOT_INITIALIZE);
 
-    // Get pointers to data
-    double *out_data = (double*)mxGPUGetData(out_result);
-    const double *in_data = (const double*)mxGPUGetDataReadOnly(in_gpu);
-
-    // Launch kernel
+    // Launch kernel based on data type
     int threadsPerBlock = 256;
     int blocksPerGrid = (total_elements + threadsPerBlock - 1) / threadsPerBlock;
 
-    spatial_diff_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        out_data, in_data, ndims_in, d_dims, total_elements);
+    if (in_class == mxDOUBLE_CLASS) {
+        // Get pointers to data
+        double *out_data = (double*)mxGPUGetData(out_result);
+        const double *in_data = (const double*)mxGPUGetDataReadOnly(in_gpu);
+
+        spatial_diff_kernel<double><<<blocksPerGrid, threadsPerBlock>>>(
+            out_data, in_data, ndims_in, d_dims, total_elements);
+    } else { // mxSINGLE_CLASS
+        // Get pointers to data
+        float *out_data = (float*)mxGPUGetData(out_result);
+        const float *in_data = (const float*)mxGPUGetDataReadOnly(in_gpu);
+
+        spatial_diff_kernel<float><<<blocksPerGrid, threadsPerBlock>>>(
+            out_data, in_data, ndims_in, d_dims, total_elements);
+    }
 
     // Check for kernel errors
     cudaError_t err = cudaGetLastError();
