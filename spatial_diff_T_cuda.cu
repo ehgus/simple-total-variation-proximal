@@ -9,10 +9,16 @@ __global__ void spatial_diff_T_kernel(T* out_data, const T* in_data,
 
     if (idx >= total_elements) return;
 
-    // Calculate multi-dimensional indices from linear index
-    int temp_idx = idx;
-    int coords[8]; // Support up to 8 dimensions
+    // Pre-compute strides for efficient indexing
+    int strides[8];
+    strides[0] = 1;
+    for (int d = 1; d < ndims; d++) {
+        strides[d] = strides[d-1] * dims[d-1];
+    }
 
+    // Calculate multi-dimensional coordinates from linear index
+    int temp_idx = idx;
+    int coords[8];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -25,30 +31,16 @@ __global__ void spatial_diff_T_kernel(T* out_data, const T* in_data,
     }
     out_data[idx] = sum_val;
 
-    // Copy coords to evaluate neighbor index
-    int neighbor_coords[8];
-    for (int d = 0; d < ndims; d++) {
-        neighbor_coords[d] = coords[d];
-    }
-
     // Compute transpose spatial differences for each dimension
     for (int dim = 0; dim < ndims; dim++) {
         // Apply backward circular shift: move backward by 1 in current dimension
-        neighbor_coords[dim] = (coords[dim] - 1 + dims[dim]) % dims[dim];
+        int neighbor_coord = (coords[dim] - 1 + dims[dim]) % dims[dim];
 
-        // Convert back to linear index
-        int neighbor_idx = 0;
-        int stride = 1;
-        for (int d = 0; d < ndims; d++) {
-            neighbor_idx += neighbor_coords[d] * stride;
-            stride *= dims[d];
-        }
+        // Calculate neighbor index efficiently using pre-computed strides
+        int neighbor_idx = idx + (neighbor_coord - coords[dim]) * strides[dim];
 
         // Subtract the shifted value (transpose operation)
         out_data[idx] -= in_data[dim + ndims * neighbor_idx];
-
-        // roll back neighbor_coords
-        neighbor_coords[dim] = coords[dim];
     }
 }
 
