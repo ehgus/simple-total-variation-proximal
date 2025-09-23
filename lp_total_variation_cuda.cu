@@ -24,7 +24,7 @@ template<typename T>
 __device__ T spatial_diff_T_device(const T* z_data, int idx, int ndims, const int* dims, const int* strides) {
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
-    int coords[8];
+    int coords[4];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -61,7 +61,7 @@ __device__ void spatial_diff_device(const T* x_tmp_data, T* result, int idx, int
 
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
-    int coords[8];
+    int coords[4];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -173,8 +173,8 @@ __global__ void spatial_diff_z_update_kernel(
     if (idx >= total_elements) return;
 
     // Local arrays for this thread's computation
-    T z_tmp_local[8];  // Support up to 8 dimensions
-    T spatial_diff_result[8];
+    T z_tmp_local[4];  // Support up to 4 dimensions
+    T spatial_diff_result[4];
 
     // Step 2: z_tmp = z - v * spatial_diff(x_tmp)
     spatial_diff_device(x_tmp_data, spatial_diff_result, idx, ndims, dims, strides);
@@ -183,12 +183,12 @@ __global__ void spatial_diff_z_update_kernel(
     }
 
     // Step 3: z = v * norm.projection(z, z_tmp / v)
-    T z_tmp_scaled[8];
+    T z_tmp_scaled[4];
     for (int d = 0; d < ndims; d++) {
         z_tmp_scaled[d] = z_tmp_local[d] / v;
     }
 
-    T z_projected[8];
+    T z_projected[4];
     unit_ball_projection_device(z_projected, z_tmp_scaled, ndims, projection_type);
 
     for (int d = 0; d < ndims; d++) {
@@ -244,8 +244,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     const mwSize *x_dims = mxGPUGetDimensions(x_gpu);
     int ndims_x = mxGPUGetNumberOfDimensions(x_gpu);
 
-    if (ndims_x > 8) {
-        mexErrMsgTxt("Maximum 8 dimensions supported");
+    if (ndims_x > 4) {
+        mexErrMsgTxt("Maximum 4 dimensions supported");
     }
 
     // Calculate total elements
@@ -255,7 +255,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     }
 
     // Create output dimensions: z has shape (ndims_x, x_dims...)
-    mwSize z_dims[9];  // Support up to 8 + 1 dimensions
+    mwSize z_dims[5];  // Support up to 4 + 1 dimensions
     z_dims[0] = ndims_x;
     for (int i = 0; i < ndims_x; i++) {
         z_dims[i + 1] = x_dims[i];
@@ -267,7 +267,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;
-    int dims_host[8], strides_host[8];
+    int dims_host[4], strides_host[4];
 
     for (int i = 0; i < ndims_x; i++) {
         dims_host[i] = (int)x_dims[i];

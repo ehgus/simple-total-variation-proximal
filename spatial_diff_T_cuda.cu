@@ -10,7 +10,7 @@ __global__ void spatial_diff_T_kernel(T* out_data, const T* in_data,
     if (idx >= total_elements) return;
 
     // Pre-compute strides for efficient indexing
-    int strides[8];
+    int strides[4];
     strides[0] = 1;
     for (int d = 1; d < ndims; d++) {
         strides[d] = strides[d-1] * dims[d-1];
@@ -18,7 +18,7 @@ __global__ void spatial_diff_T_kernel(T* out_data, const T* in_data,
 
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
-    int coords[8];
+    int coords[4];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -90,8 +90,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             mexErrMsgTxt("Dimension mismatch between input and output arrays");
         }
     }
-    if (ndims_out > 8) {
-        mexErrMsgTxt("The maximum dimension of output array is 8");
+    if (ndims_out > 4) {
+        mexErrMsgTxt("The maximum dimension of output array is 4");
     }
 
     // Calculate total elements of output array
@@ -102,8 +102,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     // Copy dimensions to device
     int *d_dims;
-    int dims_host[8];
-    for (int i = 0; i < ndims_out && i < 8; i++) {
+    int dims_host[4];
+    for (int i = 0; i < ndims_out && i < 4; i++) {
         dims_host[i] = (int)out_dims[i];
     }
 
