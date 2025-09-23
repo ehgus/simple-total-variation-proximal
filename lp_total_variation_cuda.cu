@@ -285,10 +285,18 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     cudaMemcpy(d_strides, strides_host, ndims_x * sizeof(int), cudaMemcpyHostToDevice);
 
     // Launch kernel based on data type
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (total_elements + threadsPerBlock - 1) / threadsPerBlock;
-
+    int threadsPerBlock_sdiff_T;
+    int minblocksPerGrid_sdiff_T;
+    int blocksPerGrid_sdiff_T;
+    int threadsPerBlock_diff_z;
+    int minblocksPerGrid_diff_z;
+    int blocksPerGrid_diff_z;
     if (x_class == mxDOUBLE_CLASS) {
+        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_sdiff_T, &threadsPerBlock_sdiff_T, (void*)spatial_diff_T_kernel<double>, 0, total_elements);
+        blocksPerGrid_sdiff_T = (total_elements + threadsPerBlock_sdiff_T - 1) / threadsPerBlock_sdiff_T;
+        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_diff_z, &threadsPerBlock_diff_z, (void*)spatial_diff_T_kernel<double>, 0, total_elements);
+        blocksPerGrid_diff_z = (total_elements + threadsPerBlock_diff_z - 1) / threadsPerBlock_diff_z;
+
         // Get pointers to data
         double *z_data = (double*)mxGPUGetData(z_result);
         const double *x_data = (const double*)mxGPUGetDataReadOnly(x_gpu);
@@ -300,17 +308,22 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         // Main optimization loop
         for (int iter = 0; iter < niter; iter++) {
             // Step 1: x_tmp = x + w * spatial_diff_T(z)
-            spatial_diff_T_kernel<double><<<blocksPerGrid, threadsPerBlock>>>(
+            spatial_diff_T_kernel<double><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
                 x_tmp_data, x_data, z_data, (double)w, ndims_x, d_dims, d_strides, total_elements);
 
-            // Step 2-4: spatial_diff(x_tmp) and z update
-            spatial_diff_z_update_kernel<double><<<blocksPerGrid, threadsPerBlock>>>(
+            // Step 2: spatial_diff(x_tmp) and z update
+            spatial_diff_z_update_kernel<double><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
                 z_data, x_tmp_data, (double)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
         }
 
         // Clean up x_tmp
         cudaFree(x_tmp_data);
     } else { // mxSINGLE_CLASS
+        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_sdiff_T, &threadsPerBlock_sdiff_T, (void*)spatial_diff_T_kernel<float>, 0, total_elements);
+        blocksPerGrid_sdiff_T = (total_elements + threadsPerBlock_sdiff_T - 1) / threadsPerBlock_sdiff_T;
+        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_diff_z, &threadsPerBlock_diff_z, (void*)spatial_diff_T_kernel<float>, 0, total_elements);
+        blocksPerGrid_diff_z = (total_elements + threadsPerBlock_diff_z - 1) / threadsPerBlock_diff_z;
+
         // Get pointers to data
         float *z_data = (float*)mxGPUGetData(z_result);
         const float *x_data = (const float*)mxGPUGetDataReadOnly(x_gpu);
@@ -322,11 +335,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         // Main optimization loop
         for (int iter = 0; iter < niter; iter++) {
             // Step 1: x_tmp = x + w * spatial_diff_T(z)
-            spatial_diff_T_kernel<float><<<blocksPerGrid, threadsPerBlock>>>(
+            spatial_diff_T_kernel<float><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
                 x_tmp_data, x_data, z_data, (float)w, ndims_x, d_dims, d_strides, total_elements);
 
-            // Step 2-4: spatial_diff(x_tmp) and z update
-            spatial_diff_z_update_kernel<float><<<blocksPerGrid, threadsPerBlock>>>(
+            // Step 2: spatial_diff(x_tmp) and z update
+            spatial_diff_z_update_kernel<float><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
                 z_data, x_tmp_data, (float)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
         }
 
