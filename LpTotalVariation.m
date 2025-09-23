@@ -48,14 +48,18 @@ classdef LpTotalVariation < OptRegularizer
             obj.create_tmp_arrays(x);
             % step 2: iterative find z
             % where z = argmin(1/2|(∇^T)p|^2_2+(p^T)∇x + |-z|_p*)
-            for idx=1:obj.niter
-                % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(w(∇^T)z+x)
-                obj.x_tmp = x + w .* spatial_diff_T(obj.x_tmp, obj.z);
-                obj.z_tmp = v .* spatial_diff(obj.z_tmp, obj.x_tmp);
-                % Apply diff value
-                obj.z_tmp = obj.z - obj.z_tmp;
-                % Apply proximal
-                obj.z = v*obj.norm.projection(obj.z, obj.z_tmp ./ v);
+            if isgpuarray(x)
+                obj.z = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
+            else
+                for idx=1:obj.niter
+                    % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(w(∇^T)z+x)
+                    obj.x_tmp = x + w .* spatial_diff_T(obj.x_tmp, obj.z);
+                    obj.z_tmp = v .* spatial_diff(obj.z_tmp, obj.x_tmp);
+                    % Apply diff value
+                    obj.z_tmp = obj.z - obj.z_tmp;
+                    % Apply proximal
+                    obj.z = v*obj.norm.projection(obj.z, obj.z_tmp ./ v);
+                end
             end
             % step 3: calculate y
             % y = x +  w(∇^T)z
