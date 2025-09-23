@@ -3,20 +3,6 @@
 #include <cuda_runtime.h>
 #include <cmath>
 
-// Template helper functions for CUDA math operations
-template<typename T>
-__device__ T cuda_pow(T base, T exponent);
-
-template<>
-__device__ float cuda_pow<float>(float base, float exponent) {
-    return powf(base, exponent);
-}
-
-template<>
-__device__ double cuda_pow<double>(double base, double exponent) {
-    return pow(base, exponent);
-}
-
 // Device function: spatial_diff_T operation
 // Input: z_data (input array ndims, total_elements), dims, strides, ndims
 // Output: returns the result
@@ -90,7 +76,7 @@ __device__ void l2_norm_projection_device(T* z_element, const T* z_tmp_element, 
     for (int d = 0; d < ndims; d++) {
         norm_val += z_tmp_element[d] * z_tmp_element[d];
     }
-    norm_val = cuda_pow(norm_val, T(0.5)); // sqrt
+    norm_val = sqrt(norm_val);
 
     // Apply L2 projection: z = z_tmp / max(1, ||z_tmp||_2)
     T scale_factor = (norm_val > T(1.0)) ? norm_val : T(1.0);
