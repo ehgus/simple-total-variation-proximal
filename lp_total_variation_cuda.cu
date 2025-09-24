@@ -7,7 +7,7 @@
 // Input: z_data (input array ndims, total_elements), dims, strides, ndims
 // Output: returns the result
 template<typename T>
-__device__ T spatial_diff_T_device(const T* z_data, int idx, int ndims, const int* dims, const int* strides) {
+__device__ T spatial_diff_T_device(const T* z_data, int idx, int ndims, const int* dims, const int* strides, const int total_elements) {
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
     int coords[4];
@@ -16,22 +16,22 @@ __device__ T spatial_diff_T_device(const T* z_data, int idx, int ndims, const in
         temp_idx /= dims[d];
     }
 
-    // Initialize with sum across first dimension (sum of z over dim 0)
+    // Initialize with sum across last dimension (sum of z over last dim)
     T sum_val = T(0.0);
     for (int dim = 0; dim < ndims; dim++) {
-        sum_val += z_data[dim + ndims * idx];
+        sum_val += z_data[idx + total_elements * dim];
     }
 
     // Compute transpose spatial differences for each dimension
     for (int dim = 0; dim < ndims; dim++) {
-        // Apply backward circular shift: move backward by 1 in current dimension
-        int neighbor_coord = (coords[dim] - 1 + dims[dim]) % dims[dim];
+        // Apply forward circular shift: move forward by 1 in current dimension
+        int neighbor_coord = (coords[dim] + 1) % dims[dim];
 
         // Calculate neighbor index efficiently using pre-computed strides
         int neighbor_idx = idx + (neighbor_coord - coords[dim]) * strides[dim];
 
         // Subtract the shifted value (transpose operation)
-        sum_val -= z_data[dim + ndims * neighbor_idx];
+        sum_val -= z_data[neighbor_idx + total_elements * dim];
     }
 
     // Return result
@@ -55,8 +55,8 @@ __device__ void spatial_diff_device(const T* x_tmp_data, T* result, int idx, int
 
     // Compute spatial differences for each dimension
     for (int dim = 0; dim < ndims; dim++) {
-        // Apply circular shift: move forward by 1 in current dimension
-        int neighbor_coord = (coords[dim] + 1) % dims[dim];
+        // Apply circular shift: move backward by 1 in current dimension
+        int neighbor_coord = (coords[dim] - 1 + dims[dim]) % dims[dim];
 
         // Calculate neighbor index efficiently using pre-computed strides
         int neighbor_idx = idx + (neighbor_coord - coords[dim]) * strides[dim];
@@ -138,7 +138,7 @@ __global__ void spatial_diff_T_kernel(
     if (idx >= total_elements) return;
 
     // Step 1: x_tmp = x + w * spatial_diff_T(z)
-    T spatial_diff_T_result = spatial_diff_T_device(z_data, idx, ndims, dims, strides);
+    T spatial_diff_T_result = spatial_diff_T_device(z_data, idx, ndims, dims, strides, total_elements);
     x_tmp_data[idx] = x_data[idx] + w * spatial_diff_T_result;
 }
 
@@ -165,7 +165,7 @@ __global__ void spatial_diff_z_update_kernel(
     // Step 2: z_tmp = z - v * spatial_diff(x_tmp)
     spatial_diff_device(x_tmp_data, spatial_diff_result, idx, ndims, dims, strides);
     for (int d = 0; d < ndims; d++) {
-        z_tmp_local[d] = z_data[d + ndims * idx] - v * spatial_diff_result[d];
+        z_tmp_local[d] = z_data[idx + total_elements * d] - v * spatial_diff_result[d];
     }
 
     // Step 3: z = v * norm.projection(z, z_tmp / v)
@@ -178,7 +178,7 @@ __global__ void spatial_diff_z_update_kernel(
     unit_ball_projection_device(z_projected, z_tmp_scaled, ndims, projection_type);
 
     for (int d = 0; d < ndims; d++) {
-        z_data[d + ndims * idx] = v * z_projected[d];
+        z_data[idx + total_elements * d] = v * z_projected[d];
     }
 }
 
@@ -240,12 +240,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         total_elements *= x_dims[i];
     }
 
-    // Create output dimensions: z has shape (ndims_x, x_dims...)
+    // Create output dimensions: z has shape (x_dims..., ndims_x)
     mwSize z_dims[5];  // Support up to 4 + 1 dimensions
-    z_dims[0] = ndims_x;
     for (int i = 0; i < ndims_x; i++) {
-        z_dims[i + 1] = x_dims[i];
+        z_dims[i] = x_dims[i];
     }
+    z_dims[ndims_x] = ndims_x;
     int ndims_z = ndims_x + 1;
 
     // Create output array z

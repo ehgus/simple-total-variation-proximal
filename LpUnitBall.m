@@ -43,7 +43,7 @@ classdef LpUnitBall < OptProjection
         end
 
         function y = proj_l2_ball(~, ~, x)
-            norm_x = sqrt(sum(x.^2, 1));
+            norm_x = sqrt(sum(x.^2, ndims(x)));
             inv_scale = max(norm_x, 1);
             y = x ./ inv_scale;
         end

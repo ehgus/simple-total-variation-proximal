@@ -21,7 +21,7 @@ classdef LpTotalVariation < OptRegularizer
         function create_tmp_arrays(obj, x)
             if isempty(obj.x_tmp) || any(size(obj.x_tmp) ~= size(x))
                 x_shape = size(x);
-                z_shape = horzcat(length(x_shape), x_shape);
+                z_shape = horzcat(x_shape, length(x_shape));
                 obj.x_tmp = zeros(x_shape, 'like', x);
                 obj.z = zeros(z_shape, 'like', x);
                 obj.z_tmp = zeros(z_shape, 'like', x);

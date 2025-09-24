@@ -24,23 +24,23 @@ __global__ void spatial_diff_T_kernel(T* out_data, const T* in_data,
         temp_idx /= dims[d];
     }
 
-    // Initialize output with sum across first dimension (sum of in_arr over dim 0)
+    // Initialize output with sum across last dimension (sum of in_arr over last dim)
     T sum_val = 0.0;
     for (int dim = 0; dim < ndims; dim++) {
-        sum_val += in_data[dim + ndims * idx];
+        sum_val += in_data[idx + total_elements * dim];
     }
     out_data[idx] = sum_val;
 
     // Compute transpose spatial differences for each dimension
     for (int dim = 0; dim < ndims; dim++) {
-        // Apply backward circular shift: move backward by 1 in current dimension
-        int neighbor_coord = (coords[dim] - 1 + dims[dim]) % dims[dim];
+        // Apply forward circular shift: move forward by 1 in current dimension
+        int neighbor_coord = (coords[dim] + 1) % dims[dim];
 
         // Calculate neighbor index efficiently using pre-computed strides
         int neighbor_idx = idx + (neighbor_coord - coords[dim]) * strides[dim];
 
         // Subtract the shifted value (transpose operation)
-        out_data[idx] -= in_data[dim + ndims * neighbor_idx];
+        out_data[idx] -= in_data[neighbor_idx + total_elements * dim];
     }
 }
 
@@ -82,11 +82,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     if (ndims_in != ndims_out + 1) {
         mexErrMsgTxt("Input array must have one more dimension than output array");
     }
-    if (in_dims[0] != ndims_out) {
-        mexErrMsgTxt("First dimension of input must equal number of output dimensions");
+    if (in_dims[ndims_in - 1] != ndims_out) {
+        mexErrMsgTxt("Last dimension of input must equal number of output dimensions");
     }
     for (int i = 0; i < ndims_out; i++) {
-        if (in_dims[i + 1] != out_dims[i]) {
+        if (in_dims[i] != out_dims[i]) {
             mexErrMsgTxt("Dimension mismatch between input and output arrays");
         }
     }
