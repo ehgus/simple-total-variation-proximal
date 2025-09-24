@@ -215,18 +215,14 @@ void lp_total_variation_optimize(
 
     // Main optimization loop
     for (int iter = 0; iter < niter; iter++) {
-        // Step 1: x_tmp = x + w * spatial_diff_T(z)
-        spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
-            y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
-
-        // Step 2: spatial_diff(x_tmp) and z update
+        // Step 1: spatial_diff(y) and z update
         spatial_diff_z_update_kernel<T><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
             z_data, y_data, v, projection_type, ndims_x, d_dims, d_strides, total_elements);
-    }
 
-    // Final step: y = x + w * spatial_diff_T(z)
-    spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
-        y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
+        // Step 2: y = x + w * spatial_diff_T(z)
+        spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
+            y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
+    }
 
     // Wait for completion
     cudaDeviceSynchronize();
@@ -301,7 +297,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     int z_total_elements = total_elements * ndims_x;
 
     // Create output array y for final result (same size as input x)
-    mxGPUArray *y_result = mxGPUCreateGPUArray(ndims_x, x_dims, x_class, mxREAL, MX_GPU_DO_NOT_INITIALIZE);
+    mxGPUArray *y_result = mxGPUCopyFromMxArray(prhs[0]);
 
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;

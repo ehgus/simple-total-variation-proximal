@@ -43,20 +43,20 @@ classdef LpTotalVariation < OptRegularizer
                 % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
                 obj.create_tmp_arrays(x);
                 % step 2: Find z using iteration
+                % Initial guess of y = x + w(∇^T)z = x (Since z = 0 at the initial start)
+                y(:) = x;
                 for idx=1:obj.niter
-                    % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(x + w(∇^T)z)
-                    y = spatial_diff_T(y, obj.z);
-                    y = x + w .* y;
+                    % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(x + w(∇^T)z) = v∇y
                     obj.z_tmp = v .* spatial_diff(obj.z_tmp, y);
                     % Apply diff value
                     obj.z_tmp = obj.z - obj.z_tmp;
                     % Apply proximal
                     obj.z = v*obj.norm.projection(obj.z, obj.z_tmp ./ v);
+                    % step 3: Calculate y
+                    % y = x +  w(∇^T)z
+                    y = spatial_diff_T(y, obj.z);
+                    y = x + w .* y;
                 end
-                % step 3: Calculate y
-                % y = x +  w(∇^T)z
-                y = spatial_diff_T(y, obj.z);
-                y = x + w .* y;
             end
         end
     end
