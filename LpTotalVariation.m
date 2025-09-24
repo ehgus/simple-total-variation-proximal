@@ -36,21 +36,13 @@ classdef LpTotalVariation < OptRegularizer
             % validation
             assert(strcmp(class(y), class(y)), "Input arguments should be the same class")
             if isgpuarray(x)
-                spatial_diff = @spatial_diff_cuda;
-                spatial_diff_T = @spatial_diff_T_cuda;
+                % all-in-one
+                y = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
             else
-                spatial_diff = @spatial_diff_cpu;
-                spatial_diff_T = @spatial_diff_T_cpu;
-            end
-            % calculate z
-            % step 1: initialize empty z
-            % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
-            obj.create_tmp_arrays(x);
-            % step 2: iterative find z
-            % where z = argmin(1/2|(∇^T)p|^2_2+(p^T)∇x + |-z|_p*)
-            if isgpuarray(x)
-                obj.z = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
-            else
+                % step 1: Initialize empty z
+                % if x is (X,Y,Z,) shape, z0 is (X,Y,Z,3) where fourth dimension if for saving each partial differentiation
+                obj.create_tmp_arrays(x);
+                % step 2: Find z using iteration
                 for idx=1:obj.niter
                     % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(x + w(∇^T)z)
                     y = spatial_diff_T(y, obj.z);
@@ -61,11 +53,11 @@ classdef LpTotalVariation < OptRegularizer
                     % Apply proximal
                     obj.z = v*obj.norm.projection(obj.z, obj.z_tmp ./ v);
                 end
+                % step 3: Calculate y
+                % y = x +  w(∇^T)z
+                y = spatial_diff_T(y, obj.z);
+                y = x + w .* y;
             end
-            % step 3: calculate y
-            % y = x +  w(∇^T)z
-            y = spatial_diff_T(y, obj.z);
-            y = x + w .* y;
         end
     end
 end

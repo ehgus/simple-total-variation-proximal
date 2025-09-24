@@ -182,6 +182,63 @@ __global__ void spatial_diff_z_update_kernel(
     }
 }
 
+// Template function for the optimization algorithm
+template<typename T>
+void lp_total_variation_optimize(
+    const T* x_data,            // Input data
+    T* y_data,                  // Output data
+    T w, T v,                   // Weight parameters
+    int niter,                  // Number of iterations
+    int projection_type,        // Projection type
+    int ndims_x,                // Number of dimensions
+    int total_elements,         // Total elements
+    int z_total_elements,       // Total z elements
+    const int* d_dims,          // Device dimensions
+    const int* d_strides        // Device strides
+) {
+    // Calculate optimal block sizes
+    int threadsPerBlock_sdiff_T, minblocksPerGrid_sdiff_T, blocksPerGrid_sdiff_T;
+    int threadsPerBlock_diff_z, minblocksPerGrid_diff_z, blocksPerGrid_diff_z;
+
+    cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_sdiff_T, &threadsPerBlock_sdiff_T,
+        (void*)spatial_diff_T_kernel<T>, 0, total_elements);
+    blocksPerGrid_sdiff_T = (total_elements + threadsPerBlock_sdiff_T - 1) / threadsPerBlock_sdiff_T;
+
+    cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_diff_z, &threadsPerBlock_diff_z,
+        (void*)spatial_diff_z_update_kernel<T>, 0, total_elements);
+    blocksPerGrid_diff_z = (total_elements + threadsPerBlock_diff_z - 1) / threadsPerBlock_diff_z;
+
+    // Allocate native CUDA memory for z array (optimization variable)
+    T *z_data;
+    cudaMalloc(&z_data, z_total_elements * sizeof(T));
+    cudaMemset(z_data, 0, z_total_elements * sizeof(T)); // Initialize to zero
+
+    // Main optimization loop
+    for (int iter = 0; iter < niter; iter++) {
+        // Step 1: x_tmp = x + w * spatial_diff_T(z)
+        spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
+            y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
+
+        // Step 2: spatial_diff(x_tmp) and z update
+        spatial_diff_z_update_kernel<T><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
+            z_data, y_data, v, projection_type, ndims_x, d_dims, d_strides, total_elements);
+    }
+
+    // Final step: y = x + w * spatial_diff_T(z)
+    spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
+        y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
+
+    // Wait for completion
+    cudaDeviceSynchronize();
+
+    // Check for kernel errors
+    if (cudaGetLastError() != cudaSuccess) {
+        mexErrMsgTxt("CUDA kernel execution failed");
+    }
+
+    // Clean up native CUDA arrays
+    cudaFree(z_data);
+}
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     // Initialize GPU
@@ -240,16 +297,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         total_elements *= x_dims[i];
     }
 
-    // Create output dimensions: z has shape (x_dims..., ndims_x)
-    mwSize z_dims[5];  // Support up to 4 + 1 dimensions
-    for (int i = 0; i < ndims_x; i++) {
-        z_dims[i] = x_dims[i];
-    }
-    z_dims[ndims_x] = ndims_x;
-    int ndims_z = ndims_x + 1;
+    // Calculate z array size: total_elements * ndims_x
+    int z_total_elements = total_elements * ndims_x;
 
-    // Create output array z
-    mxGPUArray *z_result = mxGPUCreateGPUArray(ndims_z, z_dims, x_class, mxREAL, MX_GPU_INITIALIZE_VALUES);
+    // Create output array y for final result (same size as input x)
+    mxGPUArray *y_result = mxGPUCreateGPUArray(ndims_x, x_dims, x_class, mxREAL, MX_GPU_DO_NOT_INITIALIZE);
 
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;
@@ -271,78 +323,24 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     cudaMemcpy(d_strides, strides_host, ndims_x * sizeof(int), cudaMemcpyHostToDevice);
 
     // Launch kernel based on data type
-    int threadsPerBlock_sdiff_T;
-    int minblocksPerGrid_sdiff_T;
-    int blocksPerGrid_sdiff_T;
-    int threadsPerBlock_diff_z;
-    int minblocksPerGrid_diff_z;
-    int blocksPerGrid_diff_z;
     if (x_class == mxDOUBLE_CLASS) {
-        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_sdiff_T, &threadsPerBlock_sdiff_T, (void*)spatial_diff_T_kernel<double>, 0, total_elements);
-        blocksPerGrid_sdiff_T = (total_elements + threadsPerBlock_sdiff_T - 1) / threadsPerBlock_sdiff_T;
-        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_diff_z, &threadsPerBlock_diff_z, (void*)spatial_diff_T_kernel<double>, 0, total_elements);
-        blocksPerGrid_diff_z = (total_elements + threadsPerBlock_diff_z - 1) / threadsPerBlock_diff_z;
-
         // Get pointers to data
-        double *z_data = (double*)mxGPUGetData(z_result);
         const double *x_data = (const double*)mxGPUGetDataReadOnly(x_gpu);
+        double *y_data = (double*)mxGPUGetData(y_result);
 
-        // Allocate temporary x_tmp array
-        double *x_tmp_data;
-        cudaMalloc(&x_tmp_data, total_elements * sizeof(double));
-
-        // Main optimization loop
-        for (int iter = 0; iter < niter; iter++) {
-            // Step 1: x_tmp = x + w * spatial_diff_T(z)
-            spatial_diff_T_kernel<double><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
-                x_tmp_data, x_data, z_data, (double)w, ndims_x, d_dims, d_strides, total_elements);
-
-            // Step 2: spatial_diff(x_tmp) and z update
-            spatial_diff_z_update_kernel<double><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
-                z_data, x_tmp_data, (double)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
-        }
-        // Wait for completion
-        cudaDeviceSynchronize();
-        // Check for kernel errors
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            mexErrMsgTxt("CUDA kernel execution failed");
-        }
-        // Clean up x_tmp
-        cudaFree(x_tmp_data);
+        // Run optimization algorithm
+        lp_total_variation_optimize<double>(
+            x_data, y_data, (double)w, (double)v, niter, projection_type,
+            ndims_x, total_elements, z_total_elements, d_dims, d_strides);
     } else { // mxSINGLE_CLASS
-        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_sdiff_T, &threadsPerBlock_sdiff_T, (void*)spatial_diff_T_kernel<float>, 0, total_elements);
-        blocksPerGrid_sdiff_T = (total_elements + threadsPerBlock_sdiff_T - 1) / threadsPerBlock_sdiff_T;
-        cudaOccupancyMaxPotentialBlockSize(&minblocksPerGrid_diff_z, &threadsPerBlock_diff_z, (void*)spatial_diff_T_kernel<float>, 0, total_elements);
-        blocksPerGrid_diff_z = (total_elements + threadsPerBlock_diff_z - 1) / threadsPerBlock_diff_z;
-
         // Get pointers to data
-        float *z_data = (float*)mxGPUGetData(z_result);
         const float *x_data = (const float*)mxGPUGetDataReadOnly(x_gpu);
+        float *y_data = (float*)mxGPUGetData(y_result);
 
-        // Allocate temporary x_tmp array
-        float *x_tmp_data;
-        cudaMalloc(&x_tmp_data, total_elements * sizeof(float));
-
-        // Main optimization loop
-        for (int iter = 0; iter < niter; iter++) {
-            // Step 1: x_tmp = x + w * spatial_diff_T(z)
-            spatial_diff_T_kernel<float><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
-                x_tmp_data, x_data, z_data, (float)w, ndims_x, d_dims, d_strides, total_elements);
-
-            // Step 2: spatial_diff(x_tmp) and z update
-            spatial_diff_z_update_kernel<float><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
-                z_data, x_tmp_data, (float)v, projection_type, ndims_x, d_dims, d_strides, total_elements);
-        }
-        // Wait for completion
-        cudaDeviceSynchronize();
-        // Check for kernel errors
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            mexErrMsgTxt("CUDA kernel execution failed");
-        }
-        // Clean up x_tmp
-        cudaFree(x_tmp_data);
+        // Run optimization algorithm
+        lp_total_variation_optimize<float>(
+            x_data, y_data, (float)w, (float)v, niter, projection_type,
+            ndims_x, total_elements, z_total_elements, d_dims, d_strides);
     }
 
     // Clean up device memory
@@ -350,9 +348,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     cudaFree(d_strides);
 
     // Create output
-    plhs[0] = mxGPUCreateMxArrayOnGPU(z_result);
+    plhs[0] = mxGPUCreateMxArrayOnGPU(y_result);
 
     // Clean up
     mxGPUDestroyGPUArray(x_gpu);
-    mxGPUDestroyGPUArray(z_result);
+    mxGPUDestroyGPUArray(y_result);
 }

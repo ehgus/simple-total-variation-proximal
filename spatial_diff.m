@@ -1,4 +1,4 @@
-function out_arr = spatial_diff_cpu(out_arr, in_arr)
+function out_arr = spatial_diff(out_arr, in_arr)
     % out_arr: (X1, X2, ..., Xp, p) shape.
     %   For each points of last dimension, each partial differention results is saved.
     % in_arr: (X1, X2, ..., Xp) shape
