@@ -6,7 +6,6 @@ classdef LpTotalVariation < OptRegularizer
         norm_weight
         % derived parameter
         norm
-        x_tmp
         z_tmp
         z
     end
@@ -19,12 +18,13 @@ classdef LpTotalVariation < OptRegularizer
             obj.norm=LpUnitBall(round(1/(1-1/p))); % projection of unit ball
         end
         function create_tmp_arrays(obj, x)
-            if isempty(obj.x_tmp) || any(size(obj.x_tmp) ~= size(x))
-                x_shape = size(x);
-                z_shape = horzcat(x_shape, length(x_shape));
-                obj.x_tmp = zeros(x_shape, 'like', x);
+            z_shape = horzcat(size(x), ndims(x));
+            if isempty(obj.z) || any(size(obj.z) ~= z_shape)
                 obj.z = zeros(z_shape, 'like', x);
                 obj.z_tmp = zeros(z_shape, 'like', x);
+            else
+                obj.z(:) = 0;
+                obj.z_tmp(:) = 0;
             end
         end
         function y=proximal(obj, y, x)
@@ -52,9 +52,10 @@ classdef LpTotalVariation < OptRegularizer
                 obj.z = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
             else
                 for idx=1:obj.niter
-                    % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(w(∇^T)z+x)
-                    obj.x_tmp = x + w .* spatial_diff_T(obj.x_tmp, obj.z);
-                    obj.z_tmp = v .* spatial_diff(obj.z_tmp, obj.x_tmp);
+                    % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(x + w(∇^T)z)
+                    y = spatial_diff_T(y, obj.z);
+                    y = x + w .* y;
+                    obj.z_tmp = v .* spatial_diff(obj.z_tmp, y);
                     % Apply diff value
                     obj.z_tmp = obj.z - obj.z_tmp;
                     % Apply proximal
