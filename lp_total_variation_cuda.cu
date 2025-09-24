@@ -3,6 +3,8 @@
 #include <cuda_runtime.h>
 #include <cmath>
 
+#define MAXDIM 4
+
 // Device function: spatial_diff_T operation
 // Input: z_data (input array ndims, total_elements), dims, strides, ndims
 // Output: returns the result
@@ -10,7 +12,7 @@ template<typename T>
 __device__ T spatial_diff_T_device(const T* z_data, int idx, int ndims, const int* dims, const int* strides, const int total_elements) {
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
-    int coords[4];
+    int coords[MAXDIM];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -47,7 +49,7 @@ __device__ void spatial_diff_device(const T* x_tmp_data, T* result, int idx, int
 
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
-    int coords[4];
+    int coords[MAXDIM];
     for (int d = 0; d < ndims; d++) {
         coords[d] = temp_idx % dims[d];
         temp_idx /= dims[d];
@@ -159,7 +161,7 @@ __global__ void spatial_diff_z_update_kernel(
     if (idx >= total_elements) return;
 
     // Local arrays for this thread's computation
-    T z_tmp_local[4];  // Support up to 4 dimensions
+    T z_tmp_local[MAXDIM];  // Support up to MAXDIM dimensions
 
     // Step 2: z_tmp = z / v - spatial_diff(x_tmp)
     spatial_diff_device(x_tmp_data, z_tmp_local, idx, ndims, dims, strides);
@@ -169,7 +171,7 @@ __global__ void spatial_diff_z_update_kernel(
 
     // Step 3: z = v * norm.projection(z, z_tmp)
 
-    T z_projected[4];
+    T z_projected[MAXDIM];
     unit_ball_projection_device(z_projected, z_tmp_local, ndims, projection_type);
 
     for (int d = 0; d < ndims; d++) {
@@ -278,8 +280,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     const mwSize *x_dims = mxGPUGetDimensions(x_gpu);
     int ndims_x = mxGPUGetNumberOfDimensions(x_gpu);
 
-    if (ndims_x > 4) {
-        mexErrMsgTxt("Maximum 4 dimensions supported");
+    if (ndims_x > MAXDIM) {
+        mexErrMsgTxt("Maximum MAXDIM dimensions supported");
     }
 
     // Calculate total elements
@@ -296,7 +298,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;
-    int dims_host[4], strides_host[4];
+    int dims_host[MAXDIM], strides_host[MAXDIM];
 
     for (int i = 0; i < ndims_x; i++) {
         dims_host[i] = (int)x_dims[i];
