@@ -160,22 +160,17 @@ __global__ void spatial_diff_z_update_kernel(
 
     // Local arrays for this thread's computation
     T z_tmp_local[4];  // Support up to 4 dimensions
-    T spatial_diff_result[4];
 
-    // Step 2: z_tmp = z - v * spatial_diff(x_tmp)
-    spatial_diff_device(x_tmp_data, spatial_diff_result, idx, ndims, dims, strides);
+    // Step 2: z_tmp = z / v - spatial_diff(x_tmp)
+    spatial_diff_device(x_tmp_data, z_tmp_local, idx, ndims, dims, strides);
     for (int d = 0; d < ndims; d++) {
-        z_tmp_local[d] = z_data[idx + total_elements * d] - v * spatial_diff_result[d];
+        z_tmp_local[d] = z_data[idx + total_elements * d] / v - z_tmp_local[d];
     }
 
-    // Step 3: z = v * norm.projection(z, z_tmp / v)
-    T z_tmp_scaled[4];
-    for (int d = 0; d < ndims; d++) {
-        z_tmp_scaled[d] = z_tmp_local[d] / v;
-    }
+    // Step 3: z = v * norm.projection(z, z_tmp)
 
     T z_projected[4];
-    unit_ball_projection_device(z_projected, z_tmp_scaled, ndims, projection_type);
+    unit_ball_projection_device(z_projected, z_tmp_local, ndims, projection_type);
 
     for (int d = 0; d < ndims; d++) {
         z_data[idx + total_elements * d] = v * z_projected[d];
