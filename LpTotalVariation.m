@@ -34,7 +34,7 @@ classdef LpTotalVariation < OptRegularizer
             % where z = argmin[v|-z|_p* + v*(w/2|(∇^T)z|^2_2+(z^T)∇x)]
             % See Benchettou, Oumaima, Abdeslem Hafid Bentbib, and Abderrahman Bouhamidi. "An accelerated tensorial double proximal gradient method for total variation regularization problem." Journal of Optimization Theory and Applications 198.1 (2023): 111-134.
             % validation
-            assert(strcmp(class(y), class(y)), "Input arguments should be the same class")
+            assert(strcmp(class(y), class(x)), "Input arguments should be the same class")
             if isgpuarray(x)
                 % all-in-one
                 y = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
