@@ -39,10 +39,10 @@ for iter = 1:max_iter
 
     % Gradient step: z = z - step_size * (z - x)
     gradient = z - noisy_img;
-    z_temp = z - step_size * gradient;
+    z = z - step_size * gradient;
 
     % Proximal step: apply TV regularizer
-    z = tv_reg.proximal(z, z_temp);
+    z = tv_reg.proximal(z);
 
     % Check convergence
     rel_change = norm(z(:) - z_old(:)) / norm(z_old(:));

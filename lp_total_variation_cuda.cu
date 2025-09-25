@@ -169,7 +169,7 @@ __global__ void spatial_diff_z_update_kernel(
         z_tmp_local[d] = z_data[idx + total_elements * d] / v - z_tmp_local[d];
     }
 
-    // Step 2: z = v * norm.projection(z, z_tmp)
+    // Step 2: z = v * norm.projection(z_tmp)
     T z_projected[MAXDIM];
     unit_ball_projection_device(z_projected, z_tmp_local, ndims, projection_type);
 

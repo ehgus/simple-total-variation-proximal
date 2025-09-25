@@ -27,14 +27,12 @@ classdef LpTotalVariation < OptRegularizer
                 obj.z_tmp(:) = 0;
             end
         end
-        function y=proximal(obj, y, x)
+        function y=proximal(obj, x)
             w = obj.weight;
             v = obj.norm_weight;
             % y = x +  w(∇^T)z
             % where z = argmin[v|-z|_p* + v*(w/2|(∇^T)z|^2_2+(z^T)∇x)]
             % See Benchettou, Oumaima, Abdeslem Hafid Bentbib, and Abderrahman Bouhamidi. "An accelerated tensorial double proximal gradient method for total variation regularization problem." Journal of Optimization Theory and Applications 198.1 (2023): 111-134.
-            % validation
-            assert(strcmp(class(y), class(x)), "Input arguments should be the same class")
             if isgpuarray(x)
                 % all-in-one
                 y = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
@@ -44,14 +42,14 @@ classdef LpTotalVariation < OptRegularizer
                 obj.create_tmp_arrays(x);
                 % step 2: Find z using iteration
                 % Initial guess of y = x + w(∇^T)z = x (We set z = 0 at the initial point)
-                y(:) = x;
+                y = x;
                 for idx=1:obj.niter
                     % Evaluate diff value of v*(w/2|(∇^T)z|^2_2+(z^T)∇x) -> diff = v∇(x + w(∇^T)z) = v∇y
                     obj.z_tmp = v .* spatial_diff(obj.z_tmp, y);
                     % Apply diff value
                     obj.z_tmp = obj.z - obj.z_tmp;
                     % Apply proximal
-                    obj.z = v*obj.norm.projection(obj.z, obj.z_tmp ./ v);
+                    obj.z = v*obj.norm.projection(obj.z_tmp ./ v);
                     % step 3: Calculate y
                     % y = x +  w(∇^T)z
                     y = spatial_diff_T(y, obj.z);
