@@ -55,7 +55,7 @@ classdef LpTotalVariation < OptRegularizer
                     % Apply diff value
                     obj.z_tmp = obj.z - obj.z_tmp;
                     % Apply proximal
-                    obj.z = v*obj.norm.projection(obj.z_tmp ./ v);
+                    obj.z = obj.norm.projection(obj.z_tmp);
                     % step 3: Calculate y
                     % y = x +  w(∇^T)z
                     y = spatial_diff_T(y, obj.z);
