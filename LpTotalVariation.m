@@ -11,6 +11,12 @@ classdef LpTotalVariation < OptRegularizer
     end
     methods
         function obj=LpTotalVariation(weight, p, niter, norm_weight)
+            arguments
+                weight
+                p
+                niter
+                norm_weight = 1e-1 / weight
+            end
             obj.weight=weight;
             obj.p=p;
             obj.niter=niter;

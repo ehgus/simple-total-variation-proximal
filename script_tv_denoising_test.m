@@ -31,7 +31,7 @@ step_size = 1.0;
 z = noisy_img;  % Initialize with noisy image
 
 % Initialize TV regularizer
-tv_reg = LpTotalVariation(lambda*step_size, p, niter, norm_weight);
+tv_reg = LpTotalVariation(lambda*step_size, p, niter);
 
 fprintf('Starting TV denoising...\n');
 tic;
