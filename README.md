@@ -16,13 +16,6 @@ To test the TV denoising functionality:
 run('script_tv_denoising_test.m')
 ```
 
-## TODO and advice
-
-- Directional weighting
-- Optimized memory access pattern using shared memory
-    - Consider using `cudaOccupancyMaxPotentialBlockSizeVariableSMem` function
-
-
 ## References
 
 - Benchettou, Oumaima, Abdeslem Hafid Bentbib, and Abderrahman Bouhamidi. "An accelerated tensorial double proximal gradient method for total variation regularization problem." Journal of Optimization Theory and Applications 198.1 (2023): 111-134.
