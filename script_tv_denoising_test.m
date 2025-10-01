@@ -44,7 +44,6 @@ for iter = 1:max_iter
 
     % Proximal step: apply TV regularizer
     z = tv_reg.proximal(z);
-    % z = helper_fista_TV_inner_gpu(z, lambda_single, is_real, has_dirichlet_boundary, inner_iteration_unit32, min_real_single, max_real_single, min_imag_single, max_imag_single, boundary_value_single);
     % z = helper_fista_TV_inner_gpu(z, single(lambda*step_size), true, false, uint32(niter), single(-100), single(100), single(0), single(0), single(0));
 
     % Check convergence
