@@ -1,3 +1,7 @@
 clear; clc;
-mexcuda('-largeArrayDims', 'lp_total_variation_cuda.cu');
-mexcuda('-output', 'helper_fista_TV_inner_gpu', 'helper_fista_TV_inner_cuda.cu', 'helper_fista_TV_inner_mex.cpp');
+script_dir = fileparts(matlab.desktop.editor.getActiveFilename);
+mexcuda('-largeArrayDims', fullfile(script_dir,'lp_total_variation_cuda.cu'));
+mexcuda('-output', fullfile(script_dir,'helper_fista_TV_inner_gpu'), ...
+                   fullfile(script_dir,'helper_fista_TV_inner_cuda.cu'), ...
+                   fullfile(script_dir,'helper_fista_TV_inner_mex.cpp') ...
+);
