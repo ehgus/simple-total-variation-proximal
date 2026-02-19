@@ -16,14 +16,13 @@ noise_level = 0.1;
 rng(42);  % For reproducible results
 noisy_img = img + noise_level * randn(size(img));
 noisy_img = max(0, min(1, noisy_img));  % Clip to [0,1]
-% noisy_img = single(noisy_img);
-% noisy_img = gpuArray(noisy_img); % if you test it on noisy_img
 
 % TV denoising parameters
 lambda = 1e-1;   % Regularization parameter
 p = 1;           % L1 or L2 total variation
 niter = 50;      % Number of iterations
 norm_weight = 1; % Weight for the dual norm
+use_gpu = true;  % Set to true to use GPU (if available)
 
 % Iterative denoising using proximal gradient method
 max_iter = 50;
@@ -31,7 +30,7 @@ step_size = 1.0;
 z = noisy_img;  % Initialize with noisy image
 
 % Initialize TV regularizer
-tv_reg = LpTotalVariation(lambda*step_size, p, niter);
+tv_reg = LpTotalVariation(lambda*step_size, p, niter, norm_weight, use_gpu);
 
 fprintf('Starting TV denoising...\n');
 tic;
@@ -44,7 +43,6 @@ for iter = 1:max_iter
 
     % Proximal step: apply TV regularizer
     z = tv_reg.proximal(z);
-    % z = helper_fista_TV_inner_gpu(z, single(lambda*step_size), true, false, uint32(niter), single(-100), single(100), single(0), single(0), single(0));
 
     % Check convergence
     rel_change = norm(z(:) - z_old(:)) / norm(z_old(:));

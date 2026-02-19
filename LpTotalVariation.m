@@ -4,23 +4,26 @@ classdef LpTotalVariation < OptRegularizer
         p
         niter
         norm_weight
+        use_gpu
         % derived parameter
         norm
         z_tmp
         z
     end
     methods
-        function obj=LpTotalVariation(weight, p, niter, norm_weight)
+        function obj=LpTotalVariation(weight, p, niter, norm_weight, use_gpu)
             arguments
                 weight
                 p
                 niter
                 norm_weight = 1e-1 / weight
+                use_gpu = false
             end
             obj.weight=weight;
             obj.p=p;
             obj.niter=niter;
             obj.norm_weight=norm_weight;
+            obj.use_gpu=use_gpu;
             obj.norm=LpUnitBall(round(1/(1-1/p))); % projection of unit ball
         end
         function create_tmp_arrays(obj, x)
@@ -39,7 +42,7 @@ classdef LpTotalVariation < OptRegularizer
             % y = x +  w(∇^T)z
             % where z = argmin[v|-z|_p* + v*(w/2|(∇^T)z|^2_2+(z^T)∇x)]
             % See Benchettou, Oumaima, Abdeslem Hafid Bentbib, and Abderrahman Bouhamidi. "An accelerated tensorial double proximal gradient method for total variation regularization problem." Journal of Optimization Theory and Applications 198.1 (2023): 111-134.
-            if isgpuarray(x)
+            if obj.use_gpu
                 % all-in-one
                 y = lp_total_variation_cuda(x, w, v, obj.niter, obj.norm.p);
             else

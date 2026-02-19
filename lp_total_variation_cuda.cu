@@ -244,8 +244,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         mexErrMsgTxt("Too many output arguments");
     }
 
-    // Get input arrays and parameters
-    const mxGPUArray *x_gpu = mxGPUCreateFromMxArray(prhs[0]);
+    // Get parameters (scalars)
     double w = mxGetScalar(prhs[1]);
     double v = mxGetScalar(prhs[2]);
     int niter = (int)mxGetScalar(prhs[3]);
@@ -270,14 +269,14 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     }
 
     // Validate data types
-    mxClassID x_class = mxGPUGetClassID(x_gpu);
+    mxClassID x_class = mxGetClassID(prhs[0]);
     if (x_class != mxDOUBLE_CLASS && x_class != mxSINGLE_CLASS) {
         mexErrMsgTxt("Input array must be of type double or single");
     }
 
     // Get dimensions of input x
-    const mwSize *x_dims = mxGPUGetDimensions(x_gpu);
-    int ndims_x = mxGPUGetNumberOfDimensions(x_gpu);
+    const mwSize *x_dims = mxGetDimensions(prhs[0]);
+    int ndims_x = mxGetNumberOfDimensions(prhs[0]);
 
     if (ndims_x > MAXDIM) {
         mexErrMsgTxt("Maximum MAXDIM dimensions supported");
@@ -291,9 +290,6 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     // Calculate z array size: total_elements * ndims_x
     int z_total_elements = total_elements * ndims_x;
-
-    // Create output array y for final result (same size as input x)
-    mxGPUArray *y_result = mxGPUCopyFromMxArray(prhs[0]);
 
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;
@@ -316,33 +312,61 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     // Launch kernel based on data type
     if (x_class == mxDOUBLE_CLASS) {
-        // Get pointers to data
-        const double *x_data = (const double*)mxGPUGetDataReadOnly(x_gpu);
-        double *y_data = (double*)mxGPUGetData(y_result);
-
+        // Get CPU data
+        const double *x_data_cpu = (const double*)mxGetData(prhs[0]);
+        
+        // Allocate GPU memory
+        double *d_x_data, *d_y_data;
+        int total_bytes = total_elements * sizeof(double);
+        cudaMalloc(&d_x_data, total_bytes);
+        cudaMalloc(&d_y_data, total_bytes);
+        
+        // Copy data from CPU to GPU
+        cudaMemcpy(d_x_data, x_data_cpu, total_bytes, cudaMemcpyHostToDevice);
+        
         // Run optimization algorithm
         lp_total_variation_optimize<double>(
-            x_data, y_data, (double)w, (double)v, niter, projection_type,
+            d_x_data, d_y_data, (double)w, (double)v, niter, projection_type,
             ndims_x, total_elements, z_total_elements, d_dims, d_strides);
+        
+        // Create output array and copy GPU result directly to it
+        plhs[0] = mxCreateNumericArray(ndims_x, x_dims, mxDOUBLE_CLASS, mxREAL);
+        double *y_result = (double*)mxGetData(plhs[0]);
+        cudaMemcpy(y_result, d_y_data, total_bytes, cudaMemcpyDeviceToHost);
+        
+        // Clean up GPU memory
+        cudaFree(d_x_data);
+        cudaFree(d_y_data);
+        
     } else { // mxSINGLE_CLASS
-        // Get pointers to data
-        const float *x_data = (const float*)mxGPUGetDataReadOnly(x_gpu);
-        float *y_data = (float*)mxGPUGetData(y_result);
-
+        // Get CPU data
+        const float *x_data_cpu = (const float*)mxGetData(prhs[0]);
+        
+        // Allocate GPU memory
+        float *d_x_data, *d_y_data;
+        int total_bytes = total_elements * sizeof(float);
+        cudaMalloc(&d_x_data, total_bytes);
+        cudaMalloc(&d_y_data, total_bytes);
+        
+        // Copy data from CPU to GPU
+        cudaMemcpy(d_x_data, x_data_cpu, total_bytes, cudaMemcpyHostToDevice);
+        
         // Run optimization algorithm
         lp_total_variation_optimize<float>(
-            x_data, y_data, (float)w, (float)v, niter, projection_type,
+            d_x_data, d_y_data, (float)w, (float)v, niter, projection_type,
             ndims_x, total_elements, z_total_elements, d_dims, d_strides);
+        
+        // Create output array and copy GPU result directly to it
+        plhs[0] = mxCreateNumericArray(ndims_x, x_dims, mxSINGLE_CLASS, mxREAL);
+        float *y_result = (float*)mxGetData(plhs[0]);
+        cudaMemcpy(y_result, d_y_data, total_bytes, cudaMemcpyDeviceToHost);
+        
+        // Clean up GPU memory
+        cudaFree(d_x_data);
+        cudaFree(d_y_data);
     }
 
     // Clean up device memory
     cudaFree(d_dims);
     cudaFree(d_strides);
-
-    // Create output
-    plhs[0] = mxGPUCreateMxArrayOnGPU(y_result);
-
-    // Clean up
-    mxGPUDestroyGPUArray(x_gpu);
-    mxGPUDestroyGPUArray(y_result);
 }
