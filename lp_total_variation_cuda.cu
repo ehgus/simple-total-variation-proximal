@@ -34,10 +34,10 @@ __device__ __forceinline__ __half T_to_half<double>(double val) {
 }
 
 // Device function: spatial_diff_T operation
-// Input: z_data (input array ndims, total_elements), dims, strides, ndims
+// Input: z_planes (per-dim planes), dims, strides, ndims
 // Output: returns the result
 template<typename T>
-__device__ T spatial_diff_T_device(const __half* z_data, int idx, int ndims, const int* dims, const int* strides, const int total_elements) {
+__device__ T spatial_diff_T_device(__half* const* z_planes, int idx, int ndims, const int* dims, const int* strides, const int total_elements) {
     // Calculate multi-dimensional coordinates from linear index
     int temp_idx = idx;
     int coords[MAXDIM];
@@ -49,7 +49,7 @@ __device__ T spatial_diff_T_device(const __half* z_data, int idx, int ndims, con
     // Initialize with sum across last dimension (sum of z over last dim)
     T sum_val = T(0.0);
     for (int dim = 0; dim < ndims; dim++) {
-        sum_val += half_to_T<T>(z_data[idx + total_elements * dim]);
+        sum_val += half_to_T<T>(z_planes[dim][idx]);
     }
 
     // Compute transpose spatial differences for each dimension
@@ -61,7 +61,7 @@ __device__ T spatial_diff_T_device(const __half* z_data, int idx, int ndims, con
         int neighbor_idx = idx + (neighbor_coord - coords[dim]) * strides[dim];
 
         // Subtract the shifted value (transpose operation)
-        sum_val -= half_to_T<T>(z_data[neighbor_idx + total_elements * dim]);
+        sum_val -= half_to_T<T>(z_planes[dim][neighbor_idx]);
     }
 
     // Return result
@@ -156,7 +156,7 @@ template<typename T>
 __global__ void spatial_diff_T_kernel(
     T* x_tmp_data,          // Output: x_tmp array (total_elements)
     const T* x_data,        // Input: x (total_elements)
-    const __half* z_data,   // Input: z in FP16 (ndims, total_elements)
+    __half* const* z_planes,// Input: z in FP16 (per-dim planes)
     T w,                    // Weight parameter
     int ndims,              // Number of dimensions
     const int* dims,        // Dimension sizes
@@ -168,14 +168,14 @@ __global__ void spatial_diff_T_kernel(
     if (idx >= total_elements) return;
 
     // Step 1: x_tmp = x + w * spatial_diff_T(z)
-    T spatial_diff_T_result = spatial_diff_T_device<T>(z_data, idx, ndims, dims, strides, total_elements);
+    T spatial_diff_T_result = spatial_diff_T_device<T>(z_planes, idx, ndims, dims, strides, total_elements);
     x_tmp_data[idx] = x_data[idx] + w * spatial_diff_T_result;
 }
 
 // Kernel 2: spatial_diff operation and z update
 template<typename T>
 __global__ void spatial_diff_z_update_kernel(
-    __half* z_data,         // Input/Output: z in FP16 (ndims, total_elements)
+    __half* const* z_planes,// Input/Output: z in FP16 (per-dim planes)
     const T* x_tmp_data,    // Input: x_tmp array (total_elements)
     T v,                    // Norm weight parameter
     int projection_type,    // Projection type: 2 for L2, -1 for L-infinity
@@ -194,7 +194,7 @@ __global__ void spatial_diff_z_update_kernel(
     // Step 1: z_tmp = z - v * spatial_diff(x_tmp)
     spatial_diff_device(x_tmp_data, z_tmp_local, idx, ndims, dims, strides);
     for (int d = 0; d < ndims; d++) {
-        z_tmp_local[d] = half_to_T<T>(z_data[idx + total_elements * d]) - v * z_tmp_local[d];
+        z_tmp_local[d] = half_to_T<T>(z_planes[d][idx]) - v * z_tmp_local[d];
     }
 
     // Step 2: z = norm.projection(z_tmp)
@@ -202,7 +202,7 @@ __global__ void spatial_diff_z_update_kernel(
     unit_ball_projection_device(z_projected, z_tmp_local, ndims, projection_type);
 
     for (int d = 0; d < ndims; d++) {
-        z_data[idx + total_elements * d] = T_to_half<T>(z_projected[d]);
+        z_planes[d][idx] = T_to_half<T>(z_projected[d]);
     }
 }
 
@@ -216,7 +216,6 @@ void lp_total_variation_optimize(
     int projection_type,        // Projection type
     int ndims_x,                // Number of dimensions
     int total_elements,         // Total elements
-    int z_total_elements,       // Total z elements
     const int* d_dims,          // Device dimensions
     const int* d_strides        // Device strides
 ) {
@@ -242,20 +241,25 @@ void lp_total_variation_optimize(
         mexErrMsgTxt("FP16 operations require CUDA Compute Capability 5.3 or higher");
     }
 
-    // Allocate native CUDA memory for z array in FP16 (optimization variable)
-    __half *z_data;
-    cudaMalloc(&z_data, z_total_elements * sizeof(__half));
-    cudaMemset(z_data, 0, z_total_elements * sizeof(__half)); // Initialize to zero
+    // Allocate per-dimension z planes to avoid a single large allocation
+    __half **z_planes_host = (__half**)malloc(ndims_x * sizeof(__half*));
+    for (int d = 0; d < ndims_x; d++) {
+        cudaMalloc(&z_planes_host[d], total_elements * sizeof(__half));
+        cudaMemset(z_planes_host[d], 0, total_elements * sizeof(__half));
+    }
+    __half **z_planes_device;
+    cudaMalloc(&z_planes_device, ndims_x * sizeof(__half*));
+    cudaMemcpy(z_planes_device, z_planes_host, ndims_x * sizeof(__half*), cudaMemcpyHostToDevice);
 
     // Main optimization loop
     for (int iter = 0; iter < niter; iter++) {
         // Step 1: spatial_diff(y) and z update
         spatial_diff_z_update_kernel<T><<<blocksPerGrid_diff_z, threadsPerBlock_diff_z>>>(
-            z_data, y_data, v, projection_type, ndims_x, d_dims, d_strides, total_elements);
+            z_planes_device, y_data, v, projection_type, ndims_x, d_dims, d_strides, total_elements);
 
         // Step 2: y = x + w * spatial_diff_T(z)
         spatial_diff_T_kernel<T><<<blocksPerGrid_sdiff_T, threadsPerBlock_sdiff_T>>>(
-            y_data, x_data, z_data, w, ndims_x, d_dims, d_strides, total_elements);
+            y_data, x_data, z_planes_device, w, ndims_x, d_dims, d_strides, total_elements);
     }
 
     // Wait for completion
@@ -267,7 +271,11 @@ void lp_total_variation_optimize(
     }
 
     // Clean up native CUDA arrays
-    cudaFree(z_data);
+    for (int d = 0; d < ndims_x; d++) {
+        cudaFree(z_planes_host[d]);
+    }
+    cudaFree(z_planes_device);
+    free(z_planes_host);
 }
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
@@ -327,8 +335,6 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     }
 
     // Calculate z array size: total_elements * ndims_x
-    int z_total_elements = total_elements * ndims_x;
-
     // Copy dimensions and compute strides
     int *d_dims, *d_strides;
     int dims_host[MAXDIM], strides_host[MAXDIM];
@@ -365,7 +371,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         // Run optimization algorithm
         lp_total_variation_optimize<double>(
             d_x_data, d_y_data, (double)w, (double)v, niter, projection_type,
-            ndims_x, total_elements, z_total_elements, d_dims, d_strides);
+            ndims_x, total_elements, d_dims, d_strides);
         
         // Create output array and copy GPU result directly to it
         plhs[0] = mxCreateNumericArray(ndims_x, x_dims, mxDOUBLE_CLASS, mxREAL);
@@ -392,7 +398,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         // Run optimization algorithm
         lp_total_variation_optimize<float>(
             d_x_data, d_y_data, (float)w, (float)v, niter, projection_type,
-            ndims_x, total_elements, z_total_elements, d_dims, d_strides);
+            ndims_x, total_elements, d_dims, d_strides);
         
         // Create output array and copy GPU result directly to it
         plhs[0] = mxCreateNumericArray(ndims_x, x_dims, mxSINGLE_CLASS, mxREAL);
